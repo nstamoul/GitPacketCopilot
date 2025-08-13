@@ -48,31 +48,26 @@ jobs:
           # Build MCP server block (with optional Authorization header)
           if [ -n "${PACKET_COPILOT_TOKEN:-}" ]; then
             MCP_BLOCK=$(cat <<'JSON'
-{
-  "mcpServers": {
-    "PacketCopilot": {
-      "type": "sse",
-      "url": "https://packetcopilot.selector.ai/mcp/",
-      "headers": {
-        "Authorization": "Bearer ${PACKET_COPILOT_TOKEN}"
-      }
-    }
-  }
-}
-JSON
-)
-          else
-            MCP_BLOCK=$(cat <<'JSON'
-{
-  "mcpServers": {
-    "PacketCopilot": {
-      "type": "sse",
-      "url": "https://packetcopilot.selector.ai/mcp/"
-    }
-  }
-}
-JSON
-)
+              {
+              "mcpServers": {
+                "PacketCopilot": {
+                  "httpUrl": "https://packetcopilot.selector.ai/mcp/",
+                  }
+              }
+            }
+            JSON
+            )
+                      else
+                        MCP_BLOCK=$(cat <<'JSON'
+            {
+              "mcpServers": {
+                "PacketCopilot": {
+                  "httpUrl": "https://packetcopilot.selector.ai/mcp/"
+                }
+              }
+            }
+            JSON
+            )
           fi
 
           # If settings.json exists, merge; else create. We avoid jq "slurp" tricks that need $() capture.
