@@ -109,50 +109,51 @@ jobs:
             base64 -w 0 "${PCAP}" > "${tmp_b64}"
 
             # Prompt (heredoc with zero extra indentation)
-            cat > /tmp/prompt.txt <<'PROMPT'
-            You are running in a CI job with access to:
-            - Packet Copilot MCP server (name: "PacketCopilot") exposing tools:
-              analyze_pcap, cleanup, convert_to_json, describe_pcap, index_pcap, new_session, sanitize_json, upload_pcap_base64
-            - A base64-encoded PCAP has been saved to a file path provided below.
+  # Write prompt (no extra indentation; closer is exactly PROMPT)
+  cat > /tmp/prompt.txt <<'PROMPT'
+You are running in a CI job with access to:
+- Packet Copilot MCP server (name: "PacketCopilot") exposing tools:
+  analyze_pcap, cleanup, convert_to_json, describe_pcap, index_pcap, new_session, sanitize_json, upload_pcap_base64
+- A base64-encoded PCAP has been saved to a file path provided below.
 
-            Strict shell safety:
-            - Do NOT use command substitution or process substitution: no $(), no backticks, no <(), no >().
-            - Use plain redirection and explicit files only.
+Strict shell safety:
+- Do NOT use command substitution or process substitution: no $(), no backticks, no <(), no >().
+- Use plain redirection and explicit files only.
 
-            Goal:
-            1) Start a new analysis session with `new_session`.
-            2) Base64-encode the PCAP/PCAPNG locally (e.g., `base64 -w 0 "${SOURCE_PCAP}" > "${B64_PATH}"`) if not already provided.
-            3) Upload the base64 string using `upload_pcap_base64`.
-            4) Convert the capture to structured JSON via `convert_to_json`.
-            5) Clean up / normalize:
-               - Use `sanitize_json` to normalize/validate the JSON.
-            6) Build an index with `index_pcap` to enable deep queries.
-            7) Produce a high-level summary with `describe_pcap`.
-            8) Run a deep expert analysis with `analyze_pcap` (protocols, flows, timings, anomalies, TLS/DNS/HTTP details, security red flags). Assemble a professional Markdown report and write it to "${REPORT_PATH}" (do not print the full report to stdout).
-            9) Use `cleanup` to clear any transient artifacts or state if needed.
-            10) Produce a clean Markdown report with:
-               - Title: "Packet Analysis Report: <PCAP Filename>"
-               - Executive Summary
-               - Key Findings (bulleted, with short explanations)
-               - Conversations & Flows (top talkers, ports, protocols)
-               - Performance & Timing (RTTs, retransmissions, latency hotspots)
-               - Application/Protocol Insights (HTTP, TLS, DNS, etc.)
-               - Security Observations (suspicious traffic, CVE-known patterns, clear warnings)
-               - Recommendations (concrete next steps for a network engineer)
-               - Appendix: Any structured tables (counts, top endpoints, errors)
-            11) Save the Markdown to the path provided below and do not print the full report to stdout.
-            12) Close and stop this process gracefully after achieving goals
+Goal:
+1) Start a new analysis session with `new_session`.
+2) Base64-encode the PCAP/PCAPNG locally (e.g., `base64 -w 0 "${SOURCE_PCAP}" > "${B64_PATH}"`) if not already provided.
+3) Upload the base64 string using `upload_pcap_base64`.
+4) Convert the capture to structured JSON via `convert_to_json`.
+5) Clean up / normalize:
+   - Use `sanitize_json` to normalize/validate the JSON.
+6) Build an index with `index_pcap` to enable deep queries.
+7) Produce a high-level summary with `describe_pcap`.
+8) Run a deep expert analysis with `analyze_pcap` (protocols, flows, timings, anomalies, TLS/DNS/HTTP details, security red flags). Assemble a professional Markdown report and write it to "${REPORT_PATH}" (do not print the full report to stdout).
+9) Use `cleanup` to clear any transient artifacts or state if needed.
+10) Produce a clean Markdown report with:
+   - Title: "Packet Analysis Report: <PCAP Filename>"
+   - Executive Summary
+   - Key Findings (bulleted, with short explanations)
+   - Conversations & Flows (top talkers, ports, protocols)
+   - Performance & Timing (RTTs, retransmissions, latency hotspots)
+   - Application/Protocol Insights (HTTP, TLS, DNS, etc.)
+   - Security Observations (suspicious traffic, CVE-known patterns, clear warnings)
+   - Recommendations (concrete next steps for a network engineer)
+   - Appendix: Any structured tables (counts, top endpoints, errors)
+11) Save the Markdown to the path provided below and do not print the full report to stdout.
+12) Close and stop this process gracefully after achieving goals
 
-            Inputs you will be given as environment variables:
-            - B64_PATH: file path to the base64-encoded PCAP (one line)
-            - REPORT_PATH: output markdown path
-            - PCAP_NAME: the original PCAP filename (for the report title)
+Inputs you will be given as environment variables:
+- B64_PATH: file path to the base64-encoded PCAP (one line)
+- REPORT_PATH: output markdown path
+- PCAP_NAME: the original PCAP filename (for the report title)
 
-            Behavior:
-            - Use the `new_session` tool first.
-            - To read the base64 content, run something like: `cat "${B64_PATH}"` and feed that string to `upload_pcap_base64`.
-            - After tools complete, write the final Markdown to "${REPORT_PATH}" with a single `cat > "${REPORT_PATH}" <<'MD' ... MD` block.
-            - Keep shell commands simple; no command substitution.
+Behavior:
+- Use the `new_session` tool first.
+- To read the base64 content, run something like: `cat "${B64_PATH}"` and feed that string to `upload_pcap_base64`.
+- After tools complete, write the final Markdown to "${REPORT_PATH}" with a single `cat > "${REPORT_PATH}" <<'MD' ... MD` block.
+- Keep shell commands simple; no command substitution.
 PROMPT
             # Run Gemini CLI with MCP; pass the file paths as env for the prompt.
             B64_PATH="${tmp_b64}" \
