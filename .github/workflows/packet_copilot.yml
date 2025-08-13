@@ -153,8 +153,7 @@ jobs:
             - To read the base64 content, run something like: `cat "${B64_PATH}"` and feed that string to `upload_pcap_base64`.
             - After tools complete, write the final Markdown to "${REPORT_PATH}" with a single `cat > "${REPORT_PATH}" <<'MD' ... MD` block.
             - Keep shell commands simple; no command substitution.
-            PROMPT
-
+PROMPT
             # Run Gemini CLI with MCP; pass the file paths as env for the prompt.
             B64_PATH="${tmp_b64}" \
             REPORT_PATH="${report_path}" \
