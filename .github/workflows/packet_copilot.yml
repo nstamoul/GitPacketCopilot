@@ -39,16 +39,14 @@ jobs:
       - name: 'Prepare ~/.gemini/settings.json with Packet Copilot MCP'
         env:
           PACKET_COPILOT_URL: 'https://packetcopilot.selector.ai/mcp/'
-          PACKET_COPILOT_TOKEN: ${{ secrets.PACKET_COPILOT_TOKEN }}
         run: |
           set -euo pipefail
           mkdir -p "${HOME}/.gemini"
           SETTINGS="${HOME}/.gemini/settings.json"
 
           # Build MCP server block (with optional Authorization header)
-          if [ -n "${PACKET_COPILOT_TOKEN:-}" ]; then
-            MCP_BLOCK=$(cat <<'JSON'
-              {
+          MCP_BLOCK=$(cat <<'JSON'
+            {
               "mcpServers": {
                 "PacketCopilot": {
                   "httpUrl": "https://packetcopilot.selector.ai/mcp/",
