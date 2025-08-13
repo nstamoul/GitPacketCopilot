@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: 'Checkout'
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # ensure BEFORE/AFTER SHAs are present locally
 
       - name: 'Set up git user'
         run: |
@@ -67,14 +69,15 @@ jobs:
           AFTER:  ${{ github.sha }}
         run: |
           set -euo pipefail
-          # Fallback when BEFORE is empty (e.g., first push on default branch)
-          if [ -z "${BEFORE}" ] || [ "${BEFORE}" = "0000000000000000000000000000000000000000" ]; then
+
+          # If BEFORE isn't a known commit locally, fall back to listing tracked files.
+          if [ -z "${BEFORE}" ] || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
             git ls-files '*.pcap' '*.pcapng' > /tmp/pcaps.txt || true
           else
             git diff --name-only "${BEFORE}" "${AFTER}" -- '*.pcap' '*.pcapng' > /tmp/pcaps.txt || true
           fi
 
-          # De-dup and filter existing
+          # De-dup and ensure files still exist
           sort -u /tmp/pcaps.txt | while read -r f; do
             [ -f "$f" ] && echo "$f"
           done > /tmp/pcaps_final.txt || true
@@ -97,16 +100,15 @@ jobs:
             [ -z "${PCAP}" ] && continue
             echo "Processing: ${PCAP}"
 
-            # Produce a safe output name
             base="$(basename "${PCAP}")"
             stem="${base%.*}"
             report_path="reports/${stem}.md"
 
-            # Pre-encode the PCAP to avoid command substitution later
+            # Pre-encode PCAP (GNU base64 on Ubuntu supports -w 0)
             tmp_b64="${RUNNER_TEMP}/${stem}.b64"
             base64 -w 0 "${PCAP}" > "${tmp_b64}"
 
-            # Prompt for Gemini (single-quoted heredoc to prevent expansion)
+            # Prompt (heredoc with zero extra indentation)
             cat > /tmp/prompt.txt <<'PROMPT'
             
             You are running in a CI job with access to:
