@@ -29,18 +29,18 @@ jobs:
           AFTER:  ${{ github.sha }}
         run: |
           set -euo pipefail
-        
+
           if [ -z "${BEFORE}" ] || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
             git ls-files '*.pcap' '*.pcapng' > /tmp/pcaps.txt || true
           else
             git diff --name-only "${BEFORE}" "${AFTER}" -- '*.pcap' '*.pcapng' > /tmp/pcaps.txt || true
           fi
-        
+
           # De-dup and ensure files still exist
           sort -u /tmp/pcaps.txt | while read -r f; do
             [ -f "$f" ] && echo "$f"
           done > /tmp/pcaps_final.txt || true
-        
+
           # Emit a SINGLE-LINE JSON array for matrix
           pcaps_json=$(jq -R -s -c 'split("\n") | map(select(length>0))' /tmp/pcaps_final.txt)
           echo "pcaps=${pcaps_json}" >> "$GITHUB_OUTPUT"
@@ -50,7 +50,6 @@ jobs:
     if: ${{ needs.detect-pcaps.outputs.pcaps != '[]' }}
     runs-on: ubuntu-latest
     strategy:
-      # serialize commits (avoid pushing from parallel jobs)
       max-parallel: 1
       matrix:
         pcap: ${{ fromJSON(needs.detect-pcaps.outputs.pcaps) }}
@@ -88,12 +87,6 @@ jobs:
           echo "Final settings.json:"
           cat "${SETTINGS}"
 
-      - name: 'Sanity check MCP wiring (pinned 0.1.20)'
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-          npx -y @google/gemini-cli -y -p "/mcp"
-
       - name: 'Prep report + base64'
         id: prep
         run: |
@@ -102,7 +95,8 @@ jobs:
           PCAP="${{ matrix.pcap }}"
           base="$(basename "${PCAP}")"
           stem="${base%.*}"
-          report_path="reports/${stem}.md"
+          # Absolute path so Gemini write_file works
+          report_path="${GITHUB_WORKSPACE}/reports/${stem}-$(date +%Y%m%d).md"
           tmp_b64="${stem}.b64"
           base64 -w 0 "${PCAP}" > "${tmp_b64}"
           echo "pcap_name=${base}" >> "$GITHUB_OUTPUT"
@@ -116,15 +110,8 @@ jobs:
           B64_PATH: ${{ steps.prep.outputs.b64_path }}
         run: |
           set -euo pipefail
-          
-          # This prompt ONLY asks the model to run the analysis and dump the raw results.
-          # This keeps the task focused and the connection time shorter.
           PROMPT="Use the Packet Copilot tool to analyze the PCAP data from the file at ${B64_PATH}. Output ONLY the raw, unstructured findings directly. Do not add any conversational text or formatting."
-          
-          # We run the command and capture the raw analysis output.
           ANALYSIS_RESULT=$(npx -y @google/gemini-cli@0.1.20 -p "${PROMPT}")
-
-          # We save the multi-line output to be used in the next step.
           echo "analysis_result<<EOF" >> "$GITHUB_OUTPUT"
           echo "${ANALYSIS_RESULT}" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
@@ -141,11 +128,11 @@ jobs:
           prompt: |-
             You are a report-writing assistant.
             Your task is to take the raw network analysis data provided below and format it into a professional Markdown report.
-          
+
             Instructions:
             1. Use the exact report structure specified.
             2. Write the final report directly to the file at '${{ env.REPORT_PATH }}'. Do not print it to standard output.
-            
+
             Report Structure:
             - Title: "Packet Analysis Report: ${{ env.PCAP_NAME }}"
             - Executive Summary
@@ -156,9 +143,9 @@ jobs:
             - Security Observations
             - Recommendations
             - Appendix
-            
+
             Begin formatting the report now.
-            
+
             ---
             Raw Analysis Data:
             ${{ env.ANALYSIS_DATA }}
@@ -175,4 +162,4 @@ jobs:
             echo "Committed ${report_path}"
           else
             echo "No report produced for ${{ matrix.pcap }}"
-          fi          
+          fi
