@@ -12,65 +12,24 @@ permissions:
   id-token: write
 
 jobs:
-  analyze-pcaps:
+  detect-pcaps:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-
+    outputs:
+      pcaps: ${{ steps.find.outputs.pcaps }}
     steps:
       - name: 'Checkout'
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # ensure BEFORE/AFTER SHAs are present locally
-
-      - name: 'Set up git user'
-        run: |
-          git config --global user.name "gemini-cli[bot]"
-          git config --global user.email "gemini-cli[bot]@users.noreply.github.com"
-
-      - name: 'Install Node (for Gemini CLI)'
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: 'Install Gemini CLI'
-        run: |
-          set -euo pipefail
-          npm i -g @google/gemini-cli@latest
-          gemini --version
-
-      - name: 'Prepare ~/.gemini/settings.json with Packet Copilot MCP'
-        env:
-          PACKET_COPILOT_URL: 'https://packetcopilot.selector.ai/mcp/'
-        run: |
-          set -euo pipefail
-          mkdir -p "${HOME}/.gemini"
-          SETTINGS="${HOME}/.gemini/settings.json"
-          TMP="${RUNNER_TEMP}/mcp_patch.json"
-
-          # Create base settings with httpUrl (no auth headers needed)
-          jq -n --arg url "${PACKET_COPILOT_URL}" \
-            '{mcpServers:{PacketCopilot:{httpUrl:$url}}}' > "${TMP}"
-
-          # Merge with existing settings.json if present
-          if [ -f "${SETTINGS}" ]; then
-            jq -s 'reduce .[] as $item ({}; . * $item)' "${SETTINGS}" "${TMP}" > "${SETTINGS}.new"
-            mv "${SETTINGS}.new" "${SETTINGS}"
-          else
-            cp "${TMP}" "${SETTINGS}"
-          fi
-
-          echo "Final settings.json:"
-          cat "${SETTINGS}"
+          fetch-depth: 0
 
       - name: 'Find changed PCAP files'
-        id: find_pcaps
+        id: find
         env:
           BEFORE: ${{ github.event.before }}
           AFTER:  ${{ github.sha }}
         run: |
           set -euo pipefail
 
-          # If BEFORE isn't a known commit locally, fall back to listing tracked files.
           if [ -z "${BEFORE}" ] || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
             git ls-files '*.pcap' '*.pcapng' > /tmp/pcaps.txt || true
           else
@@ -82,95 +41,131 @@ jobs:
             [ -f "$f" ] && echo "$f"
           done > /tmp/pcaps_final.txt || true
 
-          echo "pcap_count=$(wc -l < /tmp/pcaps_final.txt | tr -d ' ')" >> "$GITHUB_OUTPUT"
+          # Emit JSON array for matrix
+          if [ -s /tmp/pcaps_final.txt ]; then
+            jq -R -s 'split("\n") | map(select(length>0))' /tmp/pcaps_final.txt > /tmp/pcaps.json
+          else
+            printf '[]' > /tmp/pcaps.json
+          fi
 
-      - name: 'No PCAPs changed — skip'
-        if: steps.find_pcaps.outputs.pcap_count == '0'
-        run: echo "No new or modified PCAP files detected."
+          echo "pcaps=$(cat /tmp/pcaps.json)" >> "$GITHUB_OUTPUT"
 
-      - name: 'Analyze each PCAP via Gemini CLI + Packet Copilot MCP'
-        if: steps.find_pcaps.outputs.pcap_count != '0'
+  analyze-pcaps:
+    needs: detect-pcaps
+    if: ${{ needs.detect-pcaps.outputs.pcaps != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      # serialize commits (avoid pushing from parallel jobs)
+      max-parallel: 1
+      matrix:
+        pcap: ${{ fromJSON(needs.detect-pcaps.outputs.pcaps) }}
+
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 'Set up git user'
+        run: |
+          git config --global user.name "gemini-cli[bot]"
+          git config --global user.email "gemini-cli[bot]@users.noreply.github.com"
+
+      - name: 'Prepare ~/.gemini/settings.json with Packet Copilot MCP'
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PACKET_COPILOT_URL: 'https://packetcopilot.selector.ai/mcp/'
+        run: |
+          set -euo pipefail
+          mkdir -p "${HOME}/.gemini"
+          SETTINGS="${HOME}/.gemini/settings.json"
+          TMP="${RUNNER_TEMP}/mcp_patch.json"
+
+          jq -n --arg url "${PACKET_COPILOT_URL}" \
+            '{mcpServers:{PacketCopilot:{httpUrl:$url}}}' > "${TMP}"
+
+          if [ -f "${SETTINGS}" ]; then
+            jq -s 'reduce .[] as $item ({}; . * $item)' "${SETTINGS}" "${TMP}" > "${SETTINGS}.new"
+            mv "${SETTINGS}.new" "${SETTINGS}"
+          else
+            cp "${TMP}" "${SETTINGS}"
+          fi
+
+          echo "Final settings.json:"
+          cat "${SETTINGS}"
+
+      - name: 'Prep report + base64'
+        id: prep
         run: |
           set -euo pipefail
           mkdir -p reports
-          while read -r PCAP; do
-            [ -z "${PCAP}" ] && continue
-            echo "Processing: ${PCAP}"
-            base="$(basename "${PCAP}")"
-            stem="${base%.*}"
-            report_path="reports/${stem}.md"
-            # Pre-encode PCAP (GNU base64 on Ubuntu supports -w 0)
-            tmp_b64="${RUNNER_TEMP}/${stem}.b64"
-            base64 -w 0 "${PCAP}" > "${tmp_b64}"
-            # Prompt (heredoc with zero extra indentation)
-            cat > /tmp/prompt.txt <<'PROMPT'
-          You are running in a CI job with access to:
-          - Packet Copilot MCP server (name: "PacketCopilot") exposing tools:
-            analyze_pcap, cleanup, convert_to_json, describe_pcap, index_pcap, new_session, sanitize_json, upload_pcap_base64
-          - A base64-encoded PCAP has been saved to a file path provided below.
-          Strict shell safety:
-          - Do NOT use command substitution or process substitution: no $(), no backticks, no <(), no >().
-          - Use plain redirection and explicit files only.
-          Goal:
-          1) Start a new analysis session with `new_session`.
-          2) Base64-encode the PCAP/PCAPNG locally (e.g., `base64 -w 0 "${SOURCE_PCAP}" > "${B64_PATH}"`) if not already provided.
-          3) Upload the base64 string using `upload_pcap_base64`.
-          4) Convert the capture to structured JSON via `convert_to_json`.
-          5) Clean up / normalize:
-             - Use `sanitize_json` to normalize/validate the JSON.
-          6) Build an index with `index_pcap` to enable deep queries.
-          7) Produce a high-level summary with `describe_pcap`.
-          8) Run a deep expert analysis with `analyze_pcap` (protocols, flows, timings, anomalies, TLS/DNS/HTTP details, security red flags). Assemble a professional Markdown report and write it to "${REPORT_PATH}" (do not print the full report to stdout).
-          9) Use `cleanup` to clear any transient artifacts or state if needed.
-          10) Produce a clean Markdown report with:
-             - Title: "Packet Analysis Report: <PCAP Filename>"
-             - Executive Summary
-             - Key Findings (bulleted, with short explanations)
-             - Conversations & Flows (top talkers, ports, protocols)
-             - Performance & Timing (RTTs, retransmissions, latency hotspots)
-             - Application/Protocol Insights (HTTP, TLS, DNS, etc.)
-             - Security Observations (suspicious traffic, CVE-known patterns, clear warnings)
-             - Recommendations (concrete next steps for a network engineer)
-             - Appendix: Any structured tables (counts, top endpoints, errors)
-          11) Save the Markdown to the path provided below and do not print the full report to stdout.
-          12) Close and stop this process gracefully after achieving goals
-          Inputs you will be given as environment variables:
-          - B64_PATH: file path to the base64-encoded PCAP (one line)
-          - REPORT_PATH: output markdown path
-          - PCAP_NAME: the original PCAP filename (for the report title)
-          Behavior:
-          - Use the `new_session` tool first.
-          - To read the base64 content, run something like: `cat "${B64_PATH}"` and feed that string to `upload_pcap_base64`.
-          - After tools complete, write the final Markdown to "${REPORT_PATH}" with a single `cat > "${REPORT_PATH}" <<'MD' ... MD` block.
-          - Keep shell commands simple; no command substitution.
-          PROMPT
-          # Run Gemini CLI with MCP; pass the file paths as env for the prompt.
-                  B64_PATH="${tmp_b64}" \
-                  REPORT_PATH="${report_path}" \
-                  PCAP_NAME="${base}" \
-                  gemini --yolo \
-                    --use-mcp PacketCopilot \
-                    --prompt-file /tmp/prompt.txt
-      
-                  # Commit the report if created
-                  if [ -f "${report_path}" ]; then
-                    echo "Report created: ${report_path}"
-                    git add "${report_path}"
-                  else
-                    echo "WARNING: Expected report not created for ${PCAP}"
-                  fi
-                done < /tmp/pcaps_final.txt
-      
-            - name: 'Commit & push reports'
-              if: steps.find_pcaps.outputs.pcap_count != '0'
-              run: |
-                set -euo pipefail
-                if git diff --cached --quiet; then
-                  echo "No new reports to commit."
-                  exit 0
-                fi
-                git commit -m "docs: add Packet Copilot analysis reports for new PCAP(s)"
-                git push
-      
+          PCAP="${{ matrix.pcap }}"
+          base="$(basename "${PCAP}")"
+          stem="${base%.*}"
+          report_path="reports/${stem}.md"
+          tmp_b64="${RUNNER_TEMP}/${stem}.b64"
+          base64 -w 0 "${PCAP}" > "${tmp_b64}"
+          echo "pcap_name=${base}" >> "$GITHUB_OUTPUT"
+          echo "report_path=${report_path}" >> "$GITHUB_OUTPUT"
+          echo "b64_path=${tmp_b64}" >> "$GITHUB_OUTPUT"
+
+      - name: 'Run Gemini (PacketCopilot MCP)'
+        uses: google-github-actions/run-gemini-cli@v0
+        env:
+          # passed through to the agent in the prompt instructions
+          B64_PATH: ${{ steps.prep.outputs.b64_path }}
+          REPORT_PATH: ${{ steps.prep.outputs.report_path }}
+          PCAP_NAME: ${{ steps.prep.outputs.pcap_name }}
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          # Optional: disable telemetry, set long session if you like
+          settings: |-
+            {
+              "maxSessionTurns": 50,
+              "telemetry": { "enabled": false, "target": "gcp" }
+            }
+          # Non-interactive prompt (no heredocs in bash needed)
+          prompt: |-
+            You are running in a CI job with access to Packet Copilot MCP (server name: "PacketCopilot").
+            Available tools: analyze_pcap, cleanup, convert_to_json, describe_pcap, index_pcap, new_session, sanitize_json, upload_pcap_base64.
+
+            Strict shell safety (important):
+            - Do NOT use command substitution or process substitution: no $(), no backticks, no <(), no >().
+            - Use plain redirection and explicit files only.
+
+            Inputs (environment variables):
+            - B64_PATH: path to a file containing the base64-encoded PCAP (single line).
+            - REPORT_PATH: output markdown path where you must write the final report.
+            - PCAP_NAME: original PCAP filename to use in the report title.
+
+            Task:
+            1) Start a new analysis session with `new_session`.
+            2) Read base64 from ${B64_PATH} and upload it with `upload_pcap_base64`.
+            3) Convert to structured JSON via `convert_to_json`, then normalize/validate via `sanitize_json`.
+            4) Build an index with `index_pcap`.
+            5) Summarize with `describe_pcap`.
+            6) Deep analysis with `analyze_pcap` (protocols, flows, timings, anomalies, TLS/DNS/HTTP details, security flags).
+            7) Write a professional Markdown report to ${REPORT_PATH} (do not print it to stdout) with sections:
+               - Title: "Packet Analysis Report: ${PCAP_NAME}"
+               - Executive Summary
+               - Key Findings
+               - Conversations & Flows
+               - Performance & Timing
+               - Application/Protocol Insights
+               - Security Observations
+               - Recommendations
+               - Appendix (tables: top endpoints, counts, errors)
+            8) Use `cleanup` if there’s transient state to clear. Finish.
+
+      - name: 'Commit & push report'
+        run: |
+          set -euo pipefail
+          report_path='${{ steps.prep.outputs.report_path }}'
+          if [ -f "${report_path}" ]; then
+            git pull --rebase
+            git add "${report_path}"
+            git commit -m "docs: add Packet Copilot analysis report for ${{ matrix.pcap }}"
+            git push
+            echo "Committed ${report_path}"
+          else
+            echo "No report produced for ${{ matrix.pcap }}"
+          fi
