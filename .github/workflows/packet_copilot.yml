@@ -110,48 +110,67 @@ jobs:
           echo "report_path=${report_path}" >> "$GITHUB_OUTPUT"
           echo "b64_path=${tmp_b64}" >> "$GITHUB_OUTPUT"
 
-      - name: 'Run Gemini (Packet Copilot MCP)'
-        uses: google-github-actions/run-gemini-cli@v0
+      - name: 'Step 1: Analyze PCAP with Packet Copilot'
+        id: analysis
         env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           B64_PATH: ${{ steps.prep.outputs.b64_path }}
+        run: |
+          set -euo pipefail
+          
+          # This prompt ONLY asks the model to run the analysis and dump the raw results.
+          # This keeps the task focused and the connection time shorter.
+          PROMPT="Use the Packet Copilot tool to analyze the PCAP data from the file at ${B64_PATH}. Output ONLY the raw, unstructured findings directly. Do not add any conversational text or formatting."
+          
+          # We run the command and capture the raw analysis output.
+          ANALYSIS_RESULT=$(npx -y @google/gemini-cli@0.1.20 -p "${PROMPT}")
+
+          # We save the multi-line output to be used in the next step.
+          echo "analysis_result<<EOF" >> "$GITHUB_OUTPUT"
+          echo "${ANALYSIS_RESULT}" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: 'Step 2: Generate Markdown Report'
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ANALYSIS_DATA: ${{ steps.analysis.outputs.analysis_result }}
           REPORT_PATH: ${{ steps.prep.outputs.report_path }}
           PCAP_NAME: ${{ steps.prep.outputs.pcap_name }}
-        with:
-          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
-          # The inline settings here are fine, but optional,
-          # as the CLI will merge them with your ~/.gemini/settings.json file.
-          settings: |-
-            {
-              "maxSessionTurns": 50,
-              "telemetry": { "enabled": false, "target": "gcp" }
-            }
-          prompt: |-
-            You are an expert network analyst running in a CI job with access to the Packet Copilot MCP.
+        run: |
+          set -euo pipefail
 
-            Your task is to analyze the provided packet capture and generate a professional, detailed report.
+          # This second prompt takes the raw data and JUST formats it.
+          # It also uses the writeFile tool to save the report, as requested.
+          # This is a very fast operation and won't time out.
+          PROMPT="""
+          You are a report-writing assistant.
+          Your task is to take the raw network analysis data provided below and format it into a professional Markdown report.
+          
+          Instructions:
+          1. Use the exact report structure specified.
+          2. Write the final report directly to the file at '${REPORT_PATH}'. Do not print it to standard output.
 
-            Inputs (from environment variables):
-            - B64_PATH: Path to a file with the base64-encoded PCAP.
-            - REPORT_PATH: The final output path for the Markdown report.
-            - PCAP_NAME: The original filename to use in the report title.
+          Report Structure:
+          - Title: "Packet Analysis Report: ${PCAP_NAME}"
+          - Executive Summary
+          - Key Findings
+          - Conversations & Flows
+          - Performance & Timing Analysis
+          - Application & Protocol Insights (TLS, DNS, HTTP)
+          - Security Observations
+          - Recommendations
+          - Appendix
 
-            Instructions:
-            1. Use the available tools to conduct a thorough analysis of the PCAP data from ${B64_PATH}.
-            2. Generate a comprehensive Markdown report covering the topics below.
-            3. Write the final report directly to the file at ${REPORT_PATH}. Do not print it to standard output.
+          Begin formatting the report now.
 
-            Report Structure:
-            - Title: "Packet Analysis Report: ${PCAP_NAME}"
-            - Executive Summary
-            - Key Findings
-            - Conversations & Flows
-            - Performance & Timing Analysis
-            - Application & Protocol Insights (especially for TLS, DNS, HTTP)
-            - Security Observations (anomalies, suspicious flags)
-            - Recommendations
-            - Appendix (e.g., tables for top talkers, protocol distribution)
-
-            Begin the analysis now.
+          ---
+          Raw Analysis Data:
+          ${ANALYSIS_DATA}
+          """
+          
+          # We run the report generation command. Gemini will use its 'writeFile'
+          # tool to save the report at REPORT_PATH.
+          npx -y @google/gemini-cli@0.1.20 -p "${PROMPT}"
 
       - name: 'Commit & push report'
         run: |
@@ -165,4 +184,4 @@ jobs:
             echo "Committed ${report_path}"
           else
             echo "No report produced for ${{ matrix.pcap }}"
-          fi
+          fi          
