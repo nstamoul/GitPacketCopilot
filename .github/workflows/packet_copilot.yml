@@ -130,46 +130,38 @@ jobs:
           echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: 'Step 2: Generate Markdown Report'
+        uses: google-github-actions/run-gemini-cli@v0
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           ANALYSIS_DATA: ${{ steps.analysis.outputs.analysis_result }}
           REPORT_PATH: ${{ steps.prep.outputs.report_path }}
           PCAP_NAME: ${{ steps.prep.outputs.pcap_name }}
-        run: |
-          set -euo pipefail
-
-          # This second prompt takes the raw data and JUST formats it.
-          # It also uses the writeFile tool to save the report, as requested.
-          # This is a very fast operation and won't time out.
-          PROMPT="""
-          You are a report-writing assistant.
-          Your task is to take the raw network analysis data provided below and format it into a professional Markdown report.
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          prompt: |-
+            You are a report-writing assistant.
+            Your task is to take the raw network analysis data provided below and format it into a professional Markdown report.
           
-          Instructions:
-          1. Use the exact report structure specified.
-          2. Write the final report directly to the file at '${REPORT_PATH}'. Do not print it to standard output.
-
-          Report Structure:
-          - Title: "Packet Analysis Report: ${PCAP_NAME}"
-          - Executive Summary
-          - Key Findings
-          - Conversations & Flows
-          - Performance & Timing Analysis
-          - Application & Protocol Insights (TLS, DNS, HTTP)
-          - Security Observations
-          - Recommendations
-          - Appendix
-
-          Begin formatting the report now.
-
-          ---
-          Raw Analysis Data:
-          ${ANALYSIS_DATA}
-          """
-          
-          # We run the report generation command. Gemini will use its 'writeFile'
-          # tool to save the report at REPORT_PATH.
-          npx -y @google/gemini-cli@0.1.20 -p "${PROMPT}"
+            Instructions:
+            1. Use the exact report structure specified.
+            2. Write the final report directly to the file at '${{ env.REPORT_PATH }}'. Do not print it to standard output.
+            
+            Report Structure:
+            - Title: "Packet Analysis Report: ${{ env.PCAP_NAME }}"
+            - Executive Summary
+            - Key Findings
+            - Conversations & Flows
+            - Performance & Timing Analysis
+            - Application & Protocol Insights (TLS, DNS, HTTP)
+            - Security Observations
+            - Recommendations
+            - Appendix
+            
+            Begin formatting the report now.
+            
+            ---
+            Raw Analysis Data:
+            ${{ env.ANALYSIS_DATA }}
 
       - name: 'Commit & push report'
         run: |
