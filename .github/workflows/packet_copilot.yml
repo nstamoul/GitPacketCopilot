@@ -29,26 +29,21 @@ jobs:
           AFTER:  ${{ github.sha }}
         run: |
           set -euo pipefail
-
+        
           if [ -z "${BEFORE}" ] || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
             git ls-files '*.pcap' '*.pcapng' > /tmp/pcaps.txt || true
           else
             git diff --name-only "${BEFORE}" "${AFTER}" -- '*.pcap' '*.pcapng' > /tmp/pcaps.txt || true
           fi
-
+        
           # De-dup and ensure files still exist
           sort -u /tmp/pcaps.txt | while read -r f; do
             [ -f "$f" ] && echo "$f"
           done > /tmp/pcaps_final.txt || true
-
-          # Emit JSON array for matrix
-          if [ -s /tmp/pcaps_final.txt ]; then
-            jq -R -s 'split("\n") | map(select(length>0))' /tmp/pcaps_final.txt > /tmp/pcaps.json
-          else
-            printf '[]' > /tmp/pcaps.json
-          fi
-
-          echo "pcaps=$(cat /tmp/pcaps.json)" >> "$GITHUB_OUTPUT"
+        
+          # Emit a SINGLE-LINE JSON array for matrix
+          pcaps_json=$(jq -R -s -c 'split("\n") | map(select(length>0))' /tmp/pcaps_final.txt)
+          echo "pcaps=${pcaps_json}" >> "$GITHUB_OUTPUT"
 
   analyze-pcaps:
     needs: detect-pcaps
