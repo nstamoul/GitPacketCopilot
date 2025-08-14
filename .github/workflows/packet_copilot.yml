@@ -92,8 +92,7 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          npx -y @google/gemini-cli@0.1.20 --version
-          npx -y @google/gemini-cli@0.1.20 -y -p "/mcp"
+          npx -y @google/gemini-cli -y -p "/mcp"
 
       - name: 'Prep report + base64'
         id: prep
