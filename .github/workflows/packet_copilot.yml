@@ -75,9 +75,19 @@ jobs:
           SETTINGS="${HOME}/.gemini/settings.json"
           TMP="${RUNNER_TEMP}/mcp_patch.json"
 
-          jq -n --arg url "${PACKET_COPILOT_URL}" \
-            '{mcpServers:{PacketCopilot:{httpUrl:$url}}}' > "${TMP}"
+          # Match your working local config exactly
+          jq -n --arg url "${PACKET_COPILOT_URL}" '
+          {
+            selectedAuthType: "gemini-api-key",
+            mcpServers: {
+              "Packet Copilot MCP": {
+                name: "Packet Copilot MCP",
+                httpUrl: $url
+              }
+            }
+          }' > "${TMP}"
 
+          # Merge with existing settings.json if present
           if [ -f "${SETTINGS}" ]; then
             jq -s 'reduce .[] as $item ({}; . * $item)' "${SETTINGS}" "${TMP}" > "${SETTINGS}.new"
             mv "${SETTINGS}.new" "${SETTINGS}"
@@ -87,6 +97,12 @@ jobs:
 
           echo "Final settings.json:"
           cat "${SETTINGS}"
+
+      - name: 'Sanity check MCP wiring'
+        uses: google-github-actions/run-gemini-cli@v0
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          prompt: "/mcp"
 
       - name: 'Prep report + base64'
         id: prep
@@ -103,10 +119,9 @@ jobs:
           echo "report_path=${report_path}" >> "$GITHUB_OUTPUT"
           echo "b64_path=${tmp_b64}" >> "$GITHUB_OUTPUT"
 
-      - name: 'Run Gemini (PacketCopilot MCP)'
+      - name: 'Run Gemini (Packet Copilot MCP)'
         uses: google-github-actions/run-gemini-cli@v0
         env:
-          # passed through to the agent in the prompt instructions
           B64_PATH: ${{ steps.prep.outputs.b64_path }}
           REPORT_PATH: ${{ steps.prep.outputs.report_path }}
           PCAP_NAME: ${{ steps.prep.outputs.pcap_name }}
@@ -148,6 +163,7 @@ jobs:
                - Recommendations
                - Appendix (tables: top endpoints, counts, errors)
             8) Use `cleanup` if there’s transient state to clear. Finish.
+            9) Stop and finish.
 
       - name: 'Commit & push report'
         run: |
