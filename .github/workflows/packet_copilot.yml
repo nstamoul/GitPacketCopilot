@@ -41,9 +41,14 @@ jobs:
             [ -f "$f" ] && echo "$f"
           done > /tmp/pcaps_final.txt || true
 
-          # Emit a SINGLE-LINE JSON array for matrix
-          pcaps_json=$(jq -R -s -c 'split("\n") | map(select(length>0))' /tmp/pcaps_final.txt)
-          echo "pcaps=${pcaps_json}" >> "$GITHUB_OUTPUT"
+          # Emit JSON array for matrix
+          if [ -s /tmp/pcaps_final.txt ]; then
+            jq -R -s 'split("\n") | map(select(length>0))' /tmp/pcaps_final.txt > /tmp/pcaps.json
+          else
+            printf '[]' > /tmp/pcaps.json
+          fi
+
+          echo "pcaps=$(cat /tmp/pcaps.json)" >> "$GITHUB_OUTPUT"
 
   analyze-pcaps:
     needs: detect-pcaps
@@ -61,11 +66,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: 'Install Node (for npx)'
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
       - name: 'Set up git user'
         run: |
           git config --global user.name "gemini-cli[bot]"
@@ -80,19 +80,9 @@ jobs:
           SETTINGS="${HOME}/.gemini/settings.json"
           TMP="${RUNNER_TEMP}/mcp_patch.json"
 
-          # Match your working local config exactly
-          jq -n --arg url "${PACKET_COPILOT_URL}" '
-          {
-            selectedAuthType: "gemini-api-key",
-            mcpServers: {
-              "Packet Copilot MCP": {
-                name: "Packet Copilot MCP",
-                httpUrl: $url
-              }
-            }
-          }' > "${TMP}"
+          jq -n --arg url "${PACKET_COPILOT_URL}" \
+            '{mcpServers:{PacketCopilot:{httpUrl:$url}}}' > "${TMP}"
 
-          # Merge with existing settings.json if present
           if [ -f "${SETTINGS}" ]; then
             jq -s 'reduce .[] as $item ({}; . * $item)' "${SETTINGS}" "${TMP}" > "${SETTINGS}.new"
             mv "${SETTINGS}.new" "${SETTINGS}"
@@ -102,14 +92,6 @@ jobs:
 
           echo "Final settings.json:"
           cat "${SETTINGS}"
-
-      - name: 'Sanity check MCP wiring (pinned 0.1.20)'
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-          # Show CLI version and list MCPs
-          npx -y @google/gemini-cli@0.1.20 --version
-          npx -y @google/gemini-cli@0.1.20 -y -p "/mcp"
 
       - name: 'Prep report + base64'
         id: prep
