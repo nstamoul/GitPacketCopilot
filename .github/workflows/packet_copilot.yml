@@ -41,14 +41,9 @@ jobs:
             [ -f "$f" ] && echo "$f"
           done > /tmp/pcaps_final.txt || true
 
-          # Emit JSON array for matrix
-          if [ -s /tmp/pcaps_final.txt ]; then
-            jq -R -s 'split("\n") | map(select(length>0))' /tmp/pcaps_final.txt > /tmp/pcaps.json
-          else
-            printf '[]' > /tmp/pcaps.json
-          fi
-
-          echo "pcaps=$(cat /tmp/pcaps.json)" >> "$GITHUB_OUTPUT"
+          # Emit a SINGLE-LINE JSON array for matrix
+          pcaps_json=$(jq -R -s -c 'split("\n") | map(select(length>0))' /tmp/pcaps_final.txt)
+          echo "pcaps=${pcaps_json}" >> "$GITHUB_OUTPUT"
 
   analyze-pcaps:
     needs: detect-pcaps
@@ -117,13 +112,11 @@ jobs:
           PCAP_NAME: ${{ steps.prep.outputs.pcap_name }}
         with:
           gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
-          # Optional: disable telemetry, set long session if you like
           settings: |-
             {
               "maxSessionTurns": 50,
               "telemetry": { "enabled": false, "target": "gcp" }
             }
-          # Non-interactive prompt (no heredocs in bash needed)
           prompt: |-
             You are running in a CI job with access to Packet Copilot MCP (server name: "PacketCopilot").
             Available tools: analyze_pcap, cleanup, convert_to_json, describe_pcap, index_pcap, new_session, sanitize_json, upload_pcap_base64.
