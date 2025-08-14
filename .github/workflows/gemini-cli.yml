@@ -227,10 +227,11 @@ jobs:
             - **Comments**:
             `${{ steps.get_comments.outputs.comments }}`
 
-            ## SHELL SAFETY (hard requirements)
-            - DO NOT use command substitution or process substitution: **no** `$()`, backticks ``` `...` ```, `<()`, or `>()`.
-
-            ## User Request
+            ## Shell Guidelines (recommendations)
+            - Prefer direct commands when possible
+            - Use variables with proper quoting: "${VAR}"
+            - Be cautious with command substitution
+                      ## User Request
 
             The user has sent the following request:
             `${{ steps.get_context.outputs.user_request }}`
