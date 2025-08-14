@@ -126,7 +126,7 @@ jobs:
           echo "report_path=${report_path}" >> "$GITHUB_OUTPUT"
           echo "b64_path=${tmp_b64}" >> "$GITHUB_OUTPUT"
 
-      - name: 'Run Gemini (Packet Copilot MCP, pinned CLI 0.1.20)'
+      - name: 'Run Gemini (Packet Copilot MCP)'
         uses: google-github-actions/run-gemini-cli@v0
         env:
           B64_PATH: ${{ steps.prep.outputs.b64_path }}
@@ -134,48 +134,40 @@ jobs:
           PCAP_NAME: ${{ steps.prep.outputs.pcap_name }}
         with:
           gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
-          gemini_cli_version: '0.1.20'   # 👈 pin to the version that works for you
+          # The inline settings here are fine, but optional,
+          # as the CLI will merge them with your ~/.gemini/settings.json file.
           settings: |-
             {
-              "selectedAuthType": "gemini-api-key",
-              "mcpServers": {
-                "Packet Copilot MCP": {
-                  "name": "Packet Copilot MCP",
-                  "httpUrl": "https://packetcopilot.selector.ai/mcp/"
-                }
-              }
+              "maxSessionTurns": 50,
+              "telemetry": { "enabled": false, "target": "gcp" }
             }
           prompt: |-
-            You are running in a CI job with access to Packet Copilot MCP (server name: "Packet Copilot MCP").
-            Available tools: analyze_pcap, cleanup, convert_to_json, describe_pcap, index_pcap, new_session, sanitize_json, upload_pcap_base64.
+            You are an expert network analyst running in a CI job with access to the Packet Copilot MCP.
 
-            Strict shell safety (important):
-            - Do NOT use command substitution or process substitution: no $(), no backticks, no <(), no >().
-            - Use plain redirection and explicit files only.
+            Your task is to analyze the provided packet capture and generate a professional, detailed report.
 
-            Inputs (environment variables):
-            - B64_PATH: path to a file containing the base64-encoded PCAP (single line).
-            - REPORT_PATH: output markdown path where you must write the final report.
-            - PCAP_NAME: original PCAP filename to use in the report title.
+            Inputs (from environment variables):
+            - B64_PATH: Path to a file with the base64-encoded PCAP.
+            - REPORT_PATH: The final output path for the Markdown report.
+            - PCAP_NAME: The original filename to use in the report title.
 
-            Task:
-            1) Start a new analysis session with `new_session`.
-            2) Read base64 from ${B64_PATH} and upload it with `upload_pcap_base64`.
-            3) Convert to structured JSON via `convert_to_json`, then normalize/validate via `sanitize_json`.
-            4) Build an index with `index_pcap`.
-            5) Summarize with `describe_pcap`.
-            6) Deep analysis with `analyze_pcap` (protocols, flows, timings, anomalies, TLS/DNS/HTTP details, security flags).
-            7) Write a professional Markdown report to ${REPORT_PATH} (do not print it to stdout) with sections:
-               - Title: "Packet Analysis Report: ${PCAP_NAME}"
-               - Executive Summary
-               - Key Findings
-               - Conversations & Flows
-               - Performance & Timing
-               - Application/Protocol Insights
-               - Security Observations
-               - Recommendations
-               - Appendix (tables: top endpoints, counts, errors)
-            8) Use `cleanup` if there’s transient state to clear. Finish.
+            Instructions:
+            1. Use the available tools to conduct a thorough analysis of the PCAP data from ${B64_PATH}.
+            2. Generate a comprehensive Markdown report covering the topics below.
+            3. Write the final report directly to the file at ${REPORT_PATH}. Do not print it to standard output.
+
+            Report Structure:
+            - Title: "Packet Analysis Report: ${PCAP_NAME}"
+            - Executive Summary
+            - Key Findings
+            - Conversations & Flows
+            - Performance & Timing Analysis
+            - Application & Protocol Insights (especially for TLS, DNS, HTTP)
+            - Security Observations (anomalies, suspicious flags)
+            - Recommendations
+            - Appendix (e.g., tables for top talkers, protocol distribution)
+
+            Begin the analysis now.
 
       - name: 'Commit & push report'
         run: |
