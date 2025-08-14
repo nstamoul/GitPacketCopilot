@@ -88,6 +88,13 @@ jobs:
           echo "Final settings.json:"
           cat "${SETTINGS}"
 
+      - name: 'Sanity check MCP wiring (pinned 0.1.20)'
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          npx -y @google/gemini-cli@0.1.20 --version
+          npx -y @google/gemini-cli@0.1.20 -y -p "/mcp"
+
       - name: 'Prep report + base64'
         id: prep
         run: |
