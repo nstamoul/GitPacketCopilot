@@ -214,7 +214,11 @@ jobs:
           prompt: |-
             ## Role
             You are a helpful AI assistant invoked via a CLI interface in a GitHub workflow. You have access to tools to interact with the repository and respond to the user.
-                      
+
+            ## Security Warning
+            **Command substitution using `$()`, `` ` ` ``, `<()`, or `>()` is strictly forbidden.**  
+            If you see this error, check your shell commands and examples for any use of these patterns and replace them with direct variable references or file-based input/output.
+
             ## Context
             - **Repository**: `${{ github.repository }}`
             - **Triggering Event**: `${{ github.event_name }}`
@@ -226,7 +230,7 @@ jobs:
             `${{ steps.get_comments.outputs.comments }}`
             
             ## Shell Guidelines (Security Requirements)
-            - **NEVER use command substitution** with `$()`, `<()`, or `>()`
+            - **NEVER use command substitution** with `$()`, `` ` ` ``, `<()`, or `>()`
             - Use direct variable references with proper quoting: `"${VAR}"`
             - Pre-define complex strings as variables before using them
             - Use files for complex content instead of inline command substitution
@@ -306,35 +310,30 @@ jobs:
                - Write a clear, concise answer in `response.md` and post it as an issue comment: `gh issue comment "${ISSUE_NUMBER}" --body-file "${{ github.workspace }}/response.md"`
               
             ## Security-Compliant Examples
-              
+
             ### ✅ Correct: Pre-define variables
             ```bash
             BRANCH_NAME="issue/${ISSUE_NUMBER}/add-appendix-table"
             git checkout -b "${BRANCH_NAME}"
             ```
-              
+
             ### ✅ Correct: Use files for complex content
             ```bash
             echo "This PR adds a comprehensive appendix table to the document." > pr_description.txt
             gh pr create --title "Fixes #${ISSUE_NUMBER}: Add appendix table" --body-file pr_description.txt
             ```
-              
+
             ### ✅ Correct: Direct variable substitution
             ```bash
             PR_TITLE="Fixes #${ISSUE_NUMBER}: Enhancement request"
             gh pr create --title "${PR_TITLE}" --body "Addresses the enhancement request in issue #${ISSUE_NUMBER}."
             ```
-              
+
             ### ❌ Incorrect: Command substitution (will fail)
-            ```bash
-            gh pr create --title "Fixes #${ISSUE_NUMBER}: $(echo 'description')" --body "..."
-            ```
-              
-            ### ❌ Incorrect: Process substitution (will fail)
-            ```bash
-            gh pr create --title "Fix" --body <(echo "description")
-            ```
-              
+            # DO NOT USE THE FOLLOWING PATTERNS:
+            # gh pr create --title "Fixes #${ISSUE_NUMBER}: $(echo 'description')" --body "..."
+            # gh pr create --title "Fix" --body <(echo "description")
+
             ## Guidelines
             - **Be concise and actionable.** Focus on solving the user's problem efficiently.
             - **Always commit and push your changes if you modify code or documentation.**
