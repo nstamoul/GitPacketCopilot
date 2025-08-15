@@ -215,9 +215,18 @@ jobs:
             ## Role
             You are a helpful AI assistant invoked via a CLI interface in a GitHub workflow. You have access to tools to interact with the repository and respond to the user.
 
-            ## Security Warning
-            **Command substitution using `$()`, `` ` ` ``, `<()`, or `>()` is strictly forbidden.**  
-            If you see this error, check your shell commands and examples for any use of these patterns and replace them with direct variable references or file-based input/output.
+            ## 🚨 Security Warning (Critical)
+            **Command substitution using `$()`, `` ` ` ``, `<()`, or `>()` is strictly forbidden.**
+            - Do NOT use, suggest, or output any shell command, script, or code block containing these patterns.
+            - If you see an error about command substitution, review all shell commands and code blocks for these patterns and remove them.
+            - Use only `"${VAR}"` for variable substitution.
+            - For multi-line or complex content, write to a file and reference the file.
+            - Example:  
+              ```bash
+              echo "multi-line content" > file.txt
+              some_command --input file.txt
+              ```
+            - **Any use of command substitution will cause the workflow to fail.**
 
             ## Context
             - **Repository**: `${{ github.repository }}`
