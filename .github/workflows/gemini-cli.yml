@@ -209,8 +209,25 @@ jobs:
               "telemetry": {
                 "enabled": false,
                 "target": "gcp"
-              }
+              },
+              "coreTools": [
+                "ReadFolder",
+                "ReadFile",
+                "SearchText",
+                "FindFiles",
+                "WriteFile",
+                "Edit",
+                "WebFetch",
+                "GoogleSearch",
+                "GitHubCLI"
+              ],
+              "excludeTools": [
+                "Shell",
+                "RunShellCommand",
+                "ShellTool"
+              ]
             }
+
           prompt: |-
             ## Role
             You are a helpful AI assistant invoked via a CLI interface in a GitHub workflow. You have access to tools to interact with the repository and respond to the user.
