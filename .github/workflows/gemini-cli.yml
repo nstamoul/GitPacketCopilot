@@ -205,11 +205,27 @@ jobs:
           use_gemini_code_assist: '${{ vars.GOOGLE_GENAI_USE_GCA }}'
           settings: |-
             {
-              "maxSessionTurns": 50,
+              "maxSessionTurns": 10,
+              "tools": {
+                "run_shell_command": {
+                  "enabled": true,
+                  "forbidCommandSubstitution": true,
+                  "allowed": [
+                    "echo",
+                    "gh issue view",
+                    "gh pr view",
+                    "gh pr diff",
+                    "gh issue comment",
+                    "gh pr comment",
+                    "gh issue edit",
+                    "gh pr create"
+                  ]
+                }
+              },
               "telemetry": {
                 "enabled": false,
                 "target": "gcp"
-              },
+              }
             }
 
           prompt: |-
