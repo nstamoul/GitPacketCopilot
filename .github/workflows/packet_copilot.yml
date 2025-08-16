@@ -75,7 +75,7 @@ jobs:
           TMP="${RUNNER_TEMP}/mcp_patch.json"
 
           jq -n --arg url "${PACKET_COPILOT_URL}" \
-            '{"mcpServers":{PacketCopilot:{httpUrl:$url,"timeout":100000}}}' > "${TMP}"
+            '{"mcpServers":{PacketCopilot:{httpUrl:$url,"timeout":10000}}}' > "${TMP}"
 
           if [ -f "${SETTINGS}" ]; then
             jq -s 'reduce .[] as $item ({}; . * $item)' "${SETTINGS}" "${TMP}" > "${SETTINGS}.new"
