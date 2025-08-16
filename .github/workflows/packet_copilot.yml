@@ -65,28 +65,6 @@ jobs:
           git config --global user.name "gemini-cli[bot]"
           git config --global user.email "gemini-cli[bot]@users.noreply.github.com"
 
-      - name: 'Prepare ~/.gemini/settings.json with Packet Copilot MCP'
-        env:
-          PACKET_COPILOT_URL: 'https://packetcopilot.selector.ai/mcp/'
-        run: |
-          set -euo pipefail
-          mkdir -p "${HOME}/.gemini"
-          SETTINGS="${HOME}/.gemini/settings.json"
-          TMP="${RUNNER_TEMP}/mcp_patch.json"
-
-          jq -n --arg url "${PACKET_COPILOT_URL}" \
-            '{"mcpServers":{PacketCopilot:{httpUrl:$url,"timeout":10000}}}' > "${TMP}"
-
-          if [ -f "${SETTINGS}" ]; then
-            jq -s 'reduce .[] as $item ({}; . * $item)' "${SETTINGS}" "${TMP}" > "${SETTINGS}.new"
-            mv "${SETTINGS}.new" "${SETTINGS}"
-          else
-            cp "${TMP}" "${SETTINGS}"
-          fi
-
-          echo "Final settings.json:"
-          cat "${SETTINGS}"
-
       - name: 'Prep report + base64'
         id: prep
         run: |

@@ -1,0 +1,9 @@
+{
+  "selectedAuthType": "gemini-api-key",
+  "mcpServers": {
+    "Packet Copilot MCP": {
+      "name": "Packet Copilot MCP",
+      "httpUrl": "https://packetcopilot.selector.ai/mcp/"
+        }
+    }
+}
